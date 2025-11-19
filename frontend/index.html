@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Paper Formatter</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState } = React;
+
+function PaperFormatter() {
+  const [paperFile, setPaperFile] = useState(null);
+  const [templateFile, setTemplateFile] = useState(null);
+  const [figureFiles, setFigureFiles] = useState([]);
+  const [apiKey, setApiKey] = useState('');
+  const [provider, setProvider] = useState('groq'); // 'groq' or 'gemini'
+  const [formattedOutput, setFormattedOutput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [step, setStep] = useState('setup');
+
+  const handlePaperUpload = (e) => {
+    const file = e.target.files[0];
+    if (file && file.name.endsWith('.docx')) {
+      setPaperFile(file);
+      setError('');
+    } else {
+      setError('Please upload a .docx file for the paper');
+    }
+  };
+
+  const handleTemplateUpload = (e) => {
+    const file = e.target.files[0];
+    if (file && file.name.endsWith('.tex')) {
+      setTemplateFile(file);
+      setError('');
+    } else {
+      setError('Please upload a .tex file for the template');
+    }
+  };
+
+  const handleFiguresUpload = (e) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const validImages = Array.from(files).filter(file => 
+        /\.(jpg|jpeg|png|gif|pdf|eps)$/i.test(file.name)
+      );
+      if (validImages.length === files.length) {
+        setFigureFiles(Array.from(files));
+        setError('');
+      } else {
+        setError('Please upload only image files (JPG, PNG, GIF, PDF, EPS)');
+      }
+    }
+  };
+
+  const removeFigure = (index) => {
+    setFigureFiles(figureFiles.filter((_, i) => i !== index));
+  };
+
+  const formatPaper = async () => {
+    if (!paperFile || !templateFile) {
+      setError('Please upload both paper and template files');
+      return;
+    }
+
+    if (!apiKey.trim()) {
+      setError('Please enter your API key');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setStep('processing');
+
+    try {
+      const formData = new FormData();
+      formData.append('paper', paperFile);
+      formData.append('template', templateFile);
+      formData.append('apiKey', apiKey);
+      formData.append('provider', provider);
+      
+      // Add figures to form data
+      figureFiles.forEach((file, index) => {
+        formData.append('figures', file);
+      });
+
+      const response = await fetch('http://localhost:3000/api/format', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'API request failed');
+      }
+
+      const data = await response.json();
+      
+      if (data.success && data.latex) {
+        setFormattedOutput(data.latex);
+        setStep('complete');
+      } else {
+        throw new Error('Failed to generate formatted output');
+      }
+    } catch (err) {
+      setError(`Error: ${err.message}. ${provider === 'gemini' ? 'Try switching to Groq if rate limited.' : 'Make sure backend is running.'}`);
+      setStep('upload');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadLatex = () => {
+    const blob = new Blob([formattedOutput], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'formatted_paper.tex';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const reset = () => {
+    setPaperFile(null);
+    setTemplateFile(null);
+    setFigureFiles([]);
+    setFormattedOutput('');
+    setError('');
+    setStep('upload');
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+      <div className="max-w-5xl mx-auto">
+        <div className="bg-white rounded-2xl shadow-xl p-8">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold text-gray-800 mb-2">
+              📄 Research Paper Formatter
+            </h1>
+            <p className="text-gray-600">
+              Upload your paper and template to auto-format to LaTeX
+            </p>
+            <p className="text-sm text-indigo-600 mt-2">
+              ✨ Powered by {provider === 'groq' ? 'Groq (Llama 3.3 70B)' : 'Google Gemini 2.0'} - 100% Free
+            </p>
+          </div>
+
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border-2 border-red-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <span className="text-2xl">⚠️</span>
+                <p className="text-red-700 flex-1">{error}</p>
+              </div>
+            </div>
+          )}
+
+          {step === 'setup' && (
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Choose AI Provider
+                </label>
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    onClick={() => setProvider('groq')}
+                    className={`p-4 border-2 rounded-xl transition ${
+                      provider === 'groq'
+                        ? 'border-indigo-600 bg-indigo-50'
+                        : 'border-gray-300 hover:border-indigo-400'
+                    }`}
+                  >
+                    <div className="text-2xl mb-2">🚀</div>
+                    <div className="font-semibold">Groq</div>
+                    <div className="text-xs text-gray-600 mt-1">Llama 3.3 70B</div>
+                    <div className="text-xs text-green-600 mt-1">Recommended</div>
+                  </button>
+                  <button
+                    onClick={() => setProvider('gemini')}
+                    className={`p-4 border-2 rounded-xl transition ${
+                      provider === 'gemini'
+                        ? 'border-indigo-600 bg-indigo-50'
+                        : 'border-gray-300 hover:border-indigo-400'
+                    }`}
+                  >
+                    <div className="text-2xl mb-2">🧠</div>
+                    <div className="font-semibold">Gemini</div>
+                    <div className="text-xs text-gray-600 mt-1">2.0 Flash</div>
+                    <div className="text-xs text-orange-600 mt-1">Rate limited</div>
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6">
+                <div className="flex items-start gap-3 mb-4">
+                  <span className="text-3xl">🔑</span>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-800 mb-3 text-lg">
+                      Get Your Free API Key
+                    </h3>
+                    {provider === 'groq' ? (
+                      <ol className="space-y-2 text-sm text-gray-700">
+                        <li>1. Visit <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline font-medium">Groq Console</a></li>
+                        <li>2. Sign up/Login (free, no credit card)</li>
+                        <li>3. Click <strong>"Create API Key"</strong></li>
+                        <li>4. Copy and paste below</li>
+                      </ol>
+                    ) : (
+                      <ol className="space-y-2 text-sm text-gray-700">
+                        <li>1. Visit <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline font-medium">Google AI Studio</a></li>
+                        <li>2. Sign in with Google</li>
+                        <li>3. Click <strong>"Create API Key"</strong></li>
+                        <li>4. Copy and paste below</li>
+                      </ol>
+                    )}
+                    <p className="mt-4 text-xs text-gray-600 bg-white p-3 rounded">
+                      <strong>🎁 Free Tier:</strong> {provider === 'groq' ? '14,400 requests/day, very fast' : '1,500 requests/day'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {provider === 'groq' ? 'Groq' : 'Gemini'} API Key
+                </label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={`Enter your ${provider === 'groq' ? 'Groq' : 'Gemini'} API key`}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                />
+              </div>
+
+              <button
+                onClick={() => {
+                  if (apiKey.trim()) {
+                    setStep('upload');
+                    setError('');
+                  } else {
+                    setError('Please enter your API key');
+                  }
+                }}
+                className="w-full py-4 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors text-lg"
+              >
+                Continue to Upload →
+              </button>
+            </div>
+          )}
+
+          {step === 'upload' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-600">
+                  🤖 Using: <strong>{provider === 'groq' ? 'Groq Llama 3.3' : 'Gemini 2.0'}</strong>
+                </p>
+                <button
+                  onClick={() => setStep('setup')}
+                  className="text-sm text-indigo-600 hover:underline font-medium"
+                >
+                  Change Provider/Key
+                </button>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 hover:border-indigo-400 hover:bg-indigo-50 transition-all cursor-pointer">
+                  <label className="cursor-pointer block">
+                    <input
+                      type="file"
+                      accept=".docx"
+                      onChange={handlePaperUpload}
+                      className="hidden"
+                    />
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center">
+                        <span className="text-4xl">📄</span>
+                      </div>
+                      <div className="text-center">
+                        <p className="font-semibold text-gray-800 text-lg">Upload Paper</p>
+                        <p className="text-sm text-gray-500 mt-1">.docx format</p>
+                      </div>
+                      {paperFile && (
+                        <div className="mt-2 px-4 py-2 bg-green-100 text-green-800 rounded-lg text-sm font-medium">
+                          ✓ {paperFile.name}
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                </div>
+
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 hover:border-purple-400 hover:bg-purple-50 transition-all cursor-pointer">
+                  <label className="cursor-pointer block">
+                    <input
+                      type="file"
+                      accept=".tex"
+                      onChange={handleTemplateUpload}
+                      className="hidden"
+                    />
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="w-20 h-20 bg-purple-100 rounded-full flex items-center justify-center">
+                        <span className="text-4xl">📝</span>
+                      </div>
+                      <div className="text-center">
+                        <p className="font-semibold text-gray-800 text-lg">Upload Template</p>
+                        <p className="text-sm text-gray-500 mt-1">.tex format</p>
+                      </div>
+                      {templateFile && (
+                        <div className="mt-2 px-4 py-2 bg-green-100 text-green-800 rounded-lg text-sm font-medium">
+                          ✓ {templateFile.name}
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="border-2 border-dashed border-orange-300 rounded-xl p-8 hover:border-orange-400 hover:bg-orange-50 transition-all cursor-pointer">
+                <label className="cursor-pointer block">
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.gif,.pdf,.eps,.JPG,.JPEG,.PNG,.GIF,.PDF,.EPS"
+                    onChange={handleFiguresUpload}
+                    multiple
+                    className="hidden"
+                  />
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center">
+                      <span className="text-4xl">🖼️</span>
+                    </div>
+                    <div className="text-center">
+                      <p className="font-semibold text-gray-800 text-lg">Upload Figures (Optional)</p>
+                      <p className="text-sm text-gray-500 mt-1">JPG, PNG, GIF, PDF, EPS</p>
+                      <p className="text-xs text-gray-400 mt-2">You can select multiple files</p>
+                    </div>
+                    {figureFiles.length > 0 && (
+                      <div className="mt-2 w-full">
+                        <div className="mb-2 px-4 py-2 bg-green-100 text-green-800 rounded-lg text-sm font-medium text-center">
+                          ✓ {figureFiles.length} figure{figureFiles.length !== 1 ? 's' : ''} selected
+                        </div>
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                          {figureFiles.map((file, index) => (
+                            <div key={index} className="flex justify-between items-center bg-white p-2 rounded text-sm">
+                              <span>{file.name}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  removeFigure(index);
+                                }}
+                                className="text-red-600 hover:text-red-800 font-bold"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </label>
+              </div>
+
+              <button
+                onClick={formatPaper}
+                disabled={!paperFile || !templateFile || loading}
+                className="w-full py-4 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-lg"
+              >
+                {loading ? '⏳ Processing...' : '🚀 Format Paper'}
+              </button>
+            </div>
+          )}
+
+          {step === 'processing' && (
+            <div className="text-center py-16">
+              <div className="mb-6">
+                <div className="inline-block animate-spin text-6xl">⚙️</div>
+              </div>
+              <p className="text-2xl font-semibold text-gray-800 mb-3">
+                Formatting Your Paper
+              </p>
+              <p className="text-gray-600 text-lg">
+                Analyzing content and applying template guidelines...
+              </p>
+              <div className="mt-6 flex justify-center gap-2">
+                <div className="w-3 h-3 bg-indigo-600 rounded-full animate-bounce" style={{animationDelay: '0s'}}></div>
+                <div className="w-3 h-3 bg-indigo-600 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                <div className="w-3 h-3 bg-indigo-600 rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
+              </div>
+            </div>
+          )}
+
+          {step === 'complete' && (
+            <div className="space-y-6">
+              <div className="text-center py-8 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border-2 border-green-200">
+                <div className="text-6xl mb-4">✅</div>
+                <p className="text-2xl font-bold text-gray-800 mb-2">
+                  Formatting Complete!
+                </p>
+                <p className="text-gray-600">Your LaTeX code is ready to download</p>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-6 border-2 border-gray-200">
+                <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <span>📋</span> LaTeX Output Preview:
+                </h3>
+                <pre className="bg-white p-4 rounded-lg overflow-auto max-h-96 text-xs border-2 border-gray-200 font-mono leading-relaxed">
+{formattedOutput}
+                </pre>
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  onClick={downloadLatex}
+                  className="flex-1 py-4 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors text-lg"
+                >
+                  💾 Download LaTeX File
+                </button>
+                <button
+                  onClick={reset}
+                  className="flex-1 py-4 bg-gray-200 text-gray-800 rounded-xl font-semibold hover:bg-gray-300 transition-colors text-lg"
+                >
+                  🔄 Format Another Paper
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-8 bg-white rounded-xl shadow-lg p-6 border-2 border-gray-100">
+          <h3 className="font-semibold text-gray-800 mb-4 text-lg flex items-center gap-2">
+            <span>💡</span> How it works:
+          </h3>
+          <ol className="space-y-3 text-gray-700">
+            <li className="flex gap-3">
+              <span className="font-bold text-indigo-600">1.</span>
+              <span>Choose your AI provider (Groq recommended for better rate limits)</span>
+            </li>
+            <li className="flex gap-3">
+              <span className="font-bold text-indigo-600">2.</span>
+              <span>Get your free API key (no credit card required)</span>
+            </li>
+            <li className="flex gap-3">
+              <span className="font-bold text-indigo-600">3.</span>
+              <span>Upload your research paper in DOCX format</span>
+            </li>
+            <li className="flex gap-3">
+              <span className="font-bold text-indigo-600">4.</span>
+              <span>Upload the conference/journal LaTeX template</span>
+            </li>
+            <li className="flex gap-3">
+              <span className="font-bold text-indigo-600">5.</span>
+              <span>Click "Format Paper" to process with AI</span>
+            </li>
+            <li className="flex gap-3">
+              <span className="font-bold text-indigo-600">6.</span>
+              <span>Download and compile with Overleaf, TeXShop, etc.</span>
+            </li>
+          </ol>
+          <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
+            <p className="text-sm text-green-900 font-medium">
+              ✓ <strong>100% Free:</strong> Both Groq and Gemini offer generous free tiers!
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<PaperFormatter />, document.getElementById('root'));
+    </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "buildCommand": "cd backend && npm install",
+  "installCommand": "echo 'Installing dependencies'",
+  "outputDirectory": "backend",
+  "env": {
+    "GROQ_API_KEY": "@groq_api_key",
+    "GEMINI_API_KEY": "@gemini_api_key"
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/server.js" }
+  ]
+}
